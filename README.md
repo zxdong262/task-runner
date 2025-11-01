@@ -95,27 +95,38 @@ Content-Type: application/json
 
 {
   "script": "./test-script.js",
-  "args": ["arg1", "arg2"]
+  "args": ["arg1", "arg2"],
+  "oneTime": false
 }
 ```
 
+Parameters:
+
+- `script` (required): Path to the script to run
+- `args` (optional): Array of arguments to pass to the script
+- `oneTime` (optional): If true, run synchronously and return result (not tracked). If false or omitted, run asynchronously (tracked). Default: false
+
 #### Stop a Script
-```
+
+```http
 POST /api/scripts/stop/:id
 ```
 
 #### List Running Scripts
-```
+
+```http
 GET /api/scripts
 ```
 
 #### Get Server Status
-```
+
+```http
 GET /api/status
 ```
 
 #### Health Check
-```
+
+```http
 GET /health
 ```
 
@@ -140,13 +151,22 @@ npm run fix
 
 ## Example
 
-A test script is included in the root directory: `test-script.js`
+Test scripts are included in the tests directory: `tests/test-script.js` (for async execution) and `tests/test-one-time.js` (for sync oneTime execution).
 
-To run the test script:
+To run the async test script:
 ```bash
 # Using the API
 curl -X POST -u admin:password123 -H "Content-Type: application/json" \
-  -d '{"script": "./test-script.js", "args": ["test-arg"]}' \
+  -d '{"script": "./tests/test-script.js", "args": ["test-arg"]}' \
+  http://localhost:3000/api/scripts/run
+```
+
+To run the test script in oneTime mode (synchronous execution):
+
+```bash
+# Using the API with oneTime parameter
+curl -X POST -u admin:password123 -H "Content-Type: application/json" \
+  -d '{"script": "./tests/test-one-time.js", "args": ["test-arg"], "oneTime": true}' \
   http://localhost:3000/api/scripts/run
 ```
 

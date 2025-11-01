@@ -115,3 +115,5 @@ dist
 .Trashes
 ehthumbs.db
 Thumbs.db
+/cmds
+/temp

@@ -8,7 +8,7 @@ dotenv.config()
 
 const app = express()
 const PORT = process.env.PORT || 3000
-const HOST = process.env.HOST || 'localhost'
+const HOST = process.env.HOST || '0.0.0.0'
 
 // 中间件
 app.use(express.json())
@@ -19,13 +19,13 @@ app.use(auth) // 应用基本认证
 // 运行脚本
 app.post('/api/scripts/run', async (req, res) => {
   try {
-    const { script, args = [] } = req.body
+    const { script, args = [], oneTime = false } = req.body
 
     if (!script) {
       return res.status(400).json({ error: 'Script path is required' })
     }
 
-    const result = await runScript(script, args)
+    const result = await runScript(script, args, { oneTime })
     res.status(200).json(result)
   } catch (error) {
     res.status(500).json({ error: error.message })
@@ -74,6 +74,9 @@ app.listen(PORT, HOST, () => {
   console.log(`Health check: http://${HOST}:${PORT}/health`)
   console.log('API Documentation:')
   console.log('  POST   /api/scripts/run      - Run a new script')
+  console.log('                                 Body: { script, args?, oneTime? }')
+  console.log('                                 - oneTime: run synchronously and return result (not tracked)')
+  console.log('                                 - default: run asynchronously (tracked)')
   console.log('  POST   /api/scripts/stop/:id - Stop a running script')
   console.log('  GET    /api/scripts          - List all running scripts')
   console.log('  GET    /api/status           - Get server status')

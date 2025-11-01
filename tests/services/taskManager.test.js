@@ -18,10 +18,15 @@ vi.mock('child_process', () => {
     },
     on: vi.fn((event, callback) => {
       if (event === 'close') {
-        // 不在这里调用，让测试控制
+        // For oneTime mode, trigger close immediately
+        const exitCode = 0
+        setTimeout(() => {
+          callback(exitCode)
+        }, 10)
       }
     }),
-    kill: vi.fn().mockReturnValue(true)
+    kill: vi.fn().mockReturnValue(true),
+    unref: vi.fn()
   }
 
   return {
@@ -44,11 +49,53 @@ describe('Task Manager', () => {
 
   describe('runScript', () => {
     it('should run a script successfully', async () => {
-      const result = await runScript('./test.js', ['arg1'])
+      const result = await runScript('./tests/test-script.js', ['arg1'])
 
       expect(result.success).toBe(true)
       expect(result.id).toBe('test-uuid-123')
-      expect(spawn).toHaveBeenCalledWith('node', ['./test.js', 'arg1'], expect.any(Object))
+      expect(spawn).toHaveBeenCalledWith('node', ['./tests/test-script.js', 'arg1'], expect.any(Object))
+    })
+
+    it('should run a script in oneTime mode', async () => {
+      // Mock a simple process that exits immediately for oneTime testing
+      const mockProcess = {
+        pid: 1234,
+        stdout: {
+          on: vi.fn((event, callback) => {
+            if (event === 'data') {
+              setTimeout(() => callback(Buffer.from('OneTime test output')), 10)
+            }
+          })
+        },
+        stderr: {
+          on: vi.fn((event, callback) => {
+            if (event === 'data') {
+              setTimeout(() => callback(Buffer.from('OneTime test error')), 10)
+            }
+          })
+        },
+        on: vi.fn((event, callback) => {
+          if (event === 'close') {
+            const exitCode = 42
+            setTimeout(() => {
+              callback(exitCode)
+            }, 10)
+          }
+        }),
+        kill: vi.fn().mockReturnValue(true),
+        unref: vi.fn()
+      }
+
+      spawn.mockReturnValueOnce(mockProcess)
+
+      const result = await runScript('./tests/test-one-time.js', ['arg1'], { oneTime: true })
+
+      expect(result.success).toBe(true)
+      expect(result.mode).toBe('oneTime')
+      expect(result.exitCode).toBe(42)
+      expect(result.output).toContain('OneTime test output')
+      expect(result.error).toContain('OneTime test error')
+      expect(spawn).toHaveBeenCalledWith('node', ['./tests/test-one-time.js', 'arg1'], expect.objectContaining({ detached: true }))
     })
 
     it('should handle script errors gracefully', async () => {
@@ -66,7 +113,7 @@ describe('Task Manager', () => {
   describe('listScripts', () => {
     it('should list running scripts', async () => {
       // 先运行一个脚本
-      await runScript('./test.js')
+      await runScript('./tests/test-script.js')
 
       const result = await listScripts()
 
@@ -99,7 +146,7 @@ describe('Task Manager', () => {
   describe('stopScript', () => {
     it('should attempt to stop a running script', async () => {
       // 先运行一个脚本获取ID
-      const runResult = await runScript('./test.js')
+      const runResult = await runScript('./tests/test-script.js')
 
       const stopResult = await stopScript(runResult.id)
 

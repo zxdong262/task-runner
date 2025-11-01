@@ -9,9 +9,13 @@ const runningScripts = new Map()
  * 运行本地脚本
  * @param {string} scriptPath - 脚本路径
  * @param {string[]} args - 脚本参数
+ * @param {Object} options - 运行选项
+ * @param {boolean} options.oneTime - 是否同步运行并返回结果（一次性运行，不追踪）
  * @returns {Promise<Object>} 运行结果信息
  */
-export const runScript = async (scriptPath, args = []) => {
+export const runScript = async (scriptPath, args = [], options = {}) => {
+  const { oneTime = false } = options
+
   return new Promise((resolve) => {
     try {
       // 生成唯一ID
@@ -24,31 +28,75 @@ export const runScript = async (scriptPath, args = []) => {
       const startTime = new Date()
 
       // 创建子进程运行脚本
-      const process = spawn('node', [scriptPath, ...args], {
+      const childProcess = spawn('node', [scriptPath, ...args], {
         cwd: workingDir,
-        stdio: ['pipe', 'pipe', 'pipe']
+        stdio: ['pipe', 'pipe', 'pipe'],
+        detached: oneTime // 一次性运行时分离
       })
 
       // 存储输出日志
       const stdout = []
       const stderr = []
 
+      // 同步运行模式：等待完成并返回结果
+      if (oneTime) {
+        childProcess.unref() // 允许父进程退出
+
+        // 收集标准输出
+        childProcess.stdout.on('data', (data) => {
+          stdout.push(data.toString())
+        })
+
+        // 收集错误输出
+        childProcess.stderr.on('data', (data) => {
+          stderr.push(data.toString())
+        })
+
+        // 处理进程退出
+        childProcess.on('close', (code) => {
+          const endTime = new Date()
+          const duration = endTime - startTime
+
+          resolve({
+            success: true,
+            id,
+            mode: 'oneTime',
+            exitCode: code,
+            duration,
+            output: stdout.join(''),
+            error: stderr.join(''),
+            message: `Script completed with exit code ${code}`,
+            details: {
+              pid: childProcess.pid,
+              scriptPath,
+              args,
+              startTime: startTime.toISOString(),
+              endTime: endTime.toISOString(),
+              duration
+            }
+          })
+        })
+
+        return
+      }
+
+      // 异步跟踪模式：启动后立即返回，可被追踪和停止
       // 收集标准输出
-      process.stdout.on('data', (data) => {
+      childProcess.stdout.on('data', (data) => {
         const output = data.toString()
         stdout.push(output)
         console.log(`[${id}] STDOUT: ${output.trim()}`)
       })
 
       // 收集错误输出
-      process.stderr.on('data', (data) => {
+      childProcess.stderr.on('data', (data) => {
         const output = data.toString()
         stderr.push(output)
         console.error(`[${id}] STDERR: ${output.trim()}`)
       })
 
       // 处理进程退出
-      process.on('close', (code) => {
+      childProcess.on('close', (code) => {
         console.log(`[${id}] Script exited with code ${code}`)
 
         // 更新脚本状态
@@ -73,12 +121,13 @@ export const runScript = async (scriptPath, args = []) => {
         id,
         scriptPath,
         args,
-        pid: process.pid,
+        pid: childProcess.pid,
         startTime,
         status: 'running',
         workingDir,
         stdout,
-        stderr
+        stderr,
+        mode: 'tracked'
       }
 
       runningScripts.set(id, scriptInfo)
@@ -86,12 +135,14 @@ export const runScript = async (scriptPath, args = []) => {
       resolve({
         success: true,
         id,
+        mode: 'tracked',
         message: 'Script started successfully',
         details: {
-          pid: process.pid,
+          pid: childProcess.pid,
           scriptPath,
           args,
-          startTime: startTime.toISOString()
+          startTime: startTime.toISOString(),
+          note: 'This process will be tracked'
         }
       })
     } catch (error) {
