@@ -60,7 +60,7 @@ For production deployment, you can use global PM2 installation with the provided
 npm install -g pm2
 
 # Start the application with the pm2.config.js configuration
-pm2 start pm2.config.js
+pm2 start pm2.yml
 
 # Stop the application
 pm2 stop task-runner
