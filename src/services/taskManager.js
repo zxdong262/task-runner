@@ -1,6 +1,7 @@
 import { spawn } from 'child_process'
 import { randomUUID } from 'crypto'
 import { cwd } from 'process'
+import { resolve } from 'path'
 
 // 存储运行中的脚本进程
 const runningScripts = new Map()
@@ -10,11 +11,14 @@ const runningScripts = new Map()
  * @param {string} scriptPath - 脚本路径
  * @param {string[]} args - 脚本参数
  * @param {Object} options - 运行选项
- * @param {boolean} options.oneTime - 是否同步运行并返回结果（一次性运行，不追踪）
+ * @param {boolean} options.oneTime - 是否启动后立即返回，让子进程独立运行（一次性运行，不追踪）
  * @returns {Promise<Object>} 运行结果信息
  */
 export const runScript = async (scriptPath, args = [], options = {}) => {
+  console.log(`Running script: ${scriptPath} with args: ${args.join(' ')} (oneTime: ${options.oneTime || false})`)
   const { oneTime = false } = options
+
+  console.log('Starting runScript execution')
 
   return new Promise((resolve) => {
     try {
@@ -24,57 +28,78 @@ export const runScript = async (scriptPath, args = [], options = {}) => {
       // 获取当前工作目录
       const workingDir = cwd()
 
+      // 解析脚本路径为绝对路径
+      // const absoluteScriptPath = resolve(workingDir, scriptPath)
+
+      console.log('Working dir:', workingDir)
+      console.log('Script path:', scriptPath)
+      // console.log('Absolute script path:', absoluteScriptPath)
+
       // 记录开始时间
       const startTime = new Date()
 
-      // 创建子进程运行脚本
-      const childProcess = spawn('node', [scriptPath, ...args], {
+      // 根据文件扩展名决定如何运行脚本
+      let command, commandArgs
+      if (scriptPath.endsWith('.js')) {
+        // Node.js 脚本
+        command = 'node'
+        commandArgs = [scriptPath, ...args]
+      } else if (scriptPath.endsWith('.bat')) {
+        // Windows 批处理文件
+        command = 'cmd'
+        commandArgs = ['/c', scriptPath, ...args]
+      } else {
+        // 其他脚本类型，尝试直接执行
+        command = scriptPath
+        commandArgs = args
+      }
+
+      console.log('Command:', command)
+      console.log('Command args:', commandArgs)
+
+      console.log('About to spawn process')
+      const childProcess = spawn(command, commandArgs, {
         cwd: workingDir,
         stdio: ['pipe', 'pipe', 'pipe'],
-        detached: oneTime // 一次性运行时分离
+        detached: oneTime, // 一次性运行时分离
+        env: process.env
       })
+      console.log('Spawn successful, child PID:', childProcess.pid)
 
       // 存储输出日志
       const stdout = []
       const stderr = []
 
-      // 同步运行模式：等待完成并返回结果
+      // 同步运行模式：启动进程后立即返回，让子进程独立运行
       if (oneTime) {
-        childProcess.unref() // 允许父进程退出
-
-        // 收集标准输出
+        // 收集标准输出（可选，用于调试）
         childProcess.stdout.on('data', (data) => {
-          stdout.push(data.toString())
+          console.log(`[oneTime:${id}] STDOUT: ${data.toString().trim()}`)
         })
 
-        // 收集错误输出
+        // 收集错误输出（可选，用于调试）
         childProcess.stderr.on('data', (data) => {
-          stderr.push(data.toString())
+          console.error(`[oneTime:${id}] STDERR: ${data.toString().trim()}`)
         })
 
-        // 处理进程退出
+        // 可选：监听进程退出（仅用于日志，不阻塞）
         childProcess.on('close', (code) => {
-          const endTime = new Date()
-          const duration = endTime - startTime
+          console.log(`[oneTime:${id}] Script completed with exit code ${code}`)
+        })
 
-          resolve({
-            success: true,
-            id,
-            mode: 'oneTime',
-            exitCode: code,
-            duration,
-            output: stdout.join(''),
-            error: stderr.join(''),
-            message: `Script completed with exit code ${code}`,
-            details: {
-              pid: childProcess.pid,
-              scriptPath,
-              args,
-              startTime: startTime.toISOString(),
-              endTime: endTime.toISOString(),
-              duration
-            }
-          })
+        // 立即返回，让子进程独立运行
+        resolve({
+          success: true,
+          id,
+          mode: 'oneTime',
+          message: 'Script started and will run independently',
+          details: {
+            pid: childProcess.pid,
+            scriptPath,
+            args,
+            startTime: startTime.toISOString(),
+            note: 'Process detached and running independently'
+          }
         })
 
         return
@@ -147,9 +172,11 @@ export const runScript = async (scriptPath, args = [], options = {}) => {
       })
     } catch (error) {
       console.error('Error running script:', error)
+      console.error('Error message:', error.message)
+      console.error('Error stack:', error.stack)
       resolve({
         success: false,
-        error: error.message,
+        error: error.message || 'Unknown error',
         message: 'Failed to start script'
       })
     }
