@@ -1,7 +1,7 @@
 import { spawn } from 'child_process'
 import { randomUUID } from 'crypto'
 import { cwd } from 'process'
-import { resolve } from 'path'
+// import { resolve } from 'path'
 
 // 存储运行中的脚本进程
 const runningScripts = new Map()
@@ -209,7 +209,40 @@ export const stopScript = async (id) => {
     }
 
     // 尝试终止进程
-    process.kill(scriptInfo.pid, 'SIGTERM')
+    try {
+      if (process.platform === 'win32') {
+        // On Windows, use taskkill with /t to kill process tree
+        const { spawn } = await import('child_process')
+        const taskkill = spawn('taskkill', ['/pid', scriptInfo.pid.toString(), '/t', '/f'], {
+          stdio: 'inherit'
+        })
+
+        await new Promise((resolve, reject) => {
+          taskkill.on('close', (code) => {
+            // taskkill returns 0 for success, 128 for process not found (already dead)
+            if (code === 0 || code === 128) {
+              resolve()
+            } else {
+              reject(new Error(`taskkill failed with code ${code}`))
+            }
+          })
+          taskkill.on('error', (error) => {
+            // If process doesn't exist, that's fine
+            if (error.code === 'ENOENT' || error.message.includes('not found')) {
+              resolve()
+            } else {
+              reject(error)
+            }
+          })
+        })
+      } else {
+        // On Unix-like systems, use SIGTERM
+        process.kill(scriptInfo.pid, 'SIGTERM')
+      }
+    } catch (killError) {
+      console.error('Error killing process:', killError)
+      // Continue with status update even if kill failed
+    }
 
     // 更新脚本状态
     scriptInfo.status = 'stopped'
